@@ -9,3 +9,13 @@ tf_cc_binary(
         "//tensorflow/core:tensorflow",
     ],
 )
+
+tf_cc_binary(
+	name="example_train",
+	srcs=["example_train.cc"],
+	deps=[
+	   "//tensorflow/cc:cc_ops",
+	   "//tensorflow/cc:client_session",
+	   "//tensorflow/core:tensorflow",
+	],
+)
