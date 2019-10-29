@@ -106,8 +106,6 @@ void ConcurrentSteps(const Options* opts) {
   if (options.target.empty()) {
     graph::SetDefaultDevice(opts->use_gpu ? "/device:GPU:0" : "/cpu:0", &def);
   }
-
-
   TF_CHECK_OK(session->Create(def));
 
   Tensor x(DT_FLOAT, TensorShape({2,1}));
@@ -132,8 +130,6 @@ void ConcurrentSteps(const Options* opts) {
           // Copies y_normalized to x.
           x = y_norm;
   }
-
-
   TF_CHECK_OK(session->Close());
 }
 
