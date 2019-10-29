@@ -500,7 +500,7 @@ tf_cuda_library(
     name = "python_api",
     srcs = ["python_api.cc"],
     hdrs = ["python_api.h"],
-    visibility = ["//tensorflow/python:__pkg__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":c_api",
         ":c_api_internal",

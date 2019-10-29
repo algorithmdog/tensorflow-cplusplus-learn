@@ -74,8 +74,10 @@ GraphDef CreateGraphDef() {
   // y_norm = sqrt(y2_sum)
   auto y_norm = Sqrt(root, y2_sum);
 
+  auto y_abs = Abs(root, y_norm);
+
   // y_normalized = y ./ y_norm
-  Div(root.WithOpName("y_normalized"), y, y_norm);
+  Div(root.WithOpName("y_normalized"), y, y_abs);
 
   GraphDef def;
   TF_CHECK_OK(root.ToGraphDef(&def));
@@ -96,7 +98,7 @@ string DebugString(const Tensor& x, const Tensor& y) {
                          lambda(), x_flat(0), x_flat(1), y_flat(0), y_flat(1));
 }
 
-void ConcurrentSteps(const Options* opts, int session_index) {
+void ConcurrentSteps(const Options* opts) {
   // Creates a session.
   SessionOptions options;
   std::unique_ptr<Session> session(NewSession(options));
@@ -105,60 +107,36 @@ void ConcurrentSteps(const Options* opts, int session_index) {
     graph::SetDefaultDevice(opts->use_gpu ? "/device:GPU:0" : "/cpu:0", &def);
   }
 
+
   TF_CHECK_OK(session->Create(def));
 
-  // Spawn M threads for M concurrent steps.
-  const int M = opts->num_concurrent_steps;
-  std::unique_ptr<thread::ThreadPool> step_threads(
-      new thread::ThreadPool(Env::Default(), "trainer", M));
+  Tensor x(DT_FLOAT, TensorShape({2,1}));
+  auto x_flat = x.flat<float>();
+  x_flat.setRandom();
+  //Eigen::Tensor<float, 0, Eigen::RowMajor> inv_norm =
+  //        x_flat.square().sum().sqrt().inverse();
+  //x_flat = x_flat * inv_norm();
+  //Iterations
+  std::vector<Tensor> outputs;
+  for(int iter = 0; iter < opts->num_iterations; ++iter){
+          outputs.clear();
+          TF_CHECK_OK(
+                  session->Run({{"x", x}}, {"y:0", "y_normalized:0"}, {}, &outputs));
+          CHECK_EQ(size_t{2}, outputs.size());
 
-  for (int step = 0; step < M; ++step) {
-    step_threads->Schedule([&session, opts, session_index, step]() {
-      // Randomly initialize the input.
-      Tensor x(DT_FLOAT, TensorShape({2, 1}));
-      auto x_flat = x.flat<float>();
-      x_flat.setRandom();
-      Eigen::Tensor<float, 0, Eigen::RowMajor> inv_norm =
-          x_flat.square().sum().sqrt().inverse();
-      x_flat = x_flat * inv_norm();
-
-      // Iterations.
-      std::vector<Tensor> outputs;
-      for (int iter = 0; iter < opts->num_iterations; ++iter) {
-        outputs.clear();
-        TF_CHECK_OK(
-            session->Run({{"x", x}}, {"y:0", "y_normalized:0"}, {}, &outputs));
-        CHECK_EQ(size_t{2}, outputs.size());
-
-        const Tensor& y = outputs[0];
-        const Tensor& y_norm = outputs[1];
-        // Print out lambda, x, and y.
-        std::printf("%06d/%06d %s\n", session_index, step,
-                    DebugString(x, y).c_str());
-        // Copies y_normalized to x.
-        x = y_norm;
-      }
-    });
+          const Tensor& y = outputs[0];
+          const Tensor& y_norm = outputs[1];
+          // Print out lambda, x, and y.
+          std::printf("%06d %s\n", iter,
+                      DebugString(x, y).c_str());
+          // Copies y_normalized to x.
+          x = y_norm;
   }
 
-  // Delete the threadpool, thus waiting for all threads to complete.
-  step_threads.reset(nullptr);
+
   TF_CHECK_OK(session->Close());
 }
 
-void ConcurrentSessions(const Options& opts) {
-  // Spawn N threads for N concurrent sessions.
-  const int N = opts.num_concurrent_sessions;
-
-  // At the moment our Session implementation only allows
-  // one concurrently computing Session on GPU.
-  CHECK_EQ(1, N) << "Currently can only have one concurrent session.";
-
-  thread::ThreadPool session_threads(Env::Default(), "trainer", N);
-  for (int i = 0; i < N; ++i) {
-    session_threads.Schedule(std::bind(&ConcurrentSteps, &opts, i));
-  }
-}
 
 }  // end namespace example
 }  // end namespace tensorflow
@@ -231,5 +209,5 @@ int main(int argc, char* argv[]) {
   argv[dst++] = nullptr;
   argc = static_cast<int>(unknown_flags.size() + 1);
   tensorflow::port::InitMain(argv[0], &argc, &argv);
-  tensorflow::example::ConcurrentSessions(opts);
+  tensorflow::example::ConcurrentSteps(&opts);
 }
